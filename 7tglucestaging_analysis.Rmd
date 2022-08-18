@@ -1,0 +1,246 @@
+---
+title: "7T GluCEST Aging Project"
+output: pdf
+---
+
+```{r}
+if (!requireNamespace("tidyverse")) {
+  install.packages("tidyverse")
+}
+if (!requireNamespace("kableExtra")) {
+  install.packages("kableExtra")
+}
+if (!requireNamespace("knitr")) {
+  install.packages("knitr")
+}
+if (!requireNamespace("dplyr")) {
+  install.packages("dplyr")
+}
+if (!requireNamespace("tidyr")) {
+  install.packages("tidyr")
+}
+if (!requireNamespace("reshape2")) {
+  install.packages("reshape2")
+}
+
+library(tidyverse)
+library(kableExtra)
+library(knitr)
+library(tidyr)
+```
+
+
+```{r}
+project = '/Users/jjee/Desktop/aging'
+cest_roi = read.csv(file.path(project, 'output_measures', 
+                              'all_subs_GluCEST_sub_rois.csv'),
+                    check.names = FALSE)
+struc_roi = read.csv(file.path(project, 'output_measures',
+                               'all_subs_INV2_sub_rois.csv'),
+                     check.names = FALSE)
+
+```
+
+```{r}
+omit_bblid = c('106880_12062', '21617_11749', '23250_12237')
+cest_hippo = cest_roi %>% select(c('Subject', 'group', 
+                                   'Left Hippocampus NZMean',
+                                   'Left Hippocampus NZcount',
+                                   'Right Hippocampus NZMean',
+                                   'Right Hippocampus NZcount'))
+cest_hippo$type = 'cest'
+struc_hippo = struc_roi %>% select(c('Subject', 'group', 
+                                     'Left Hippocampus NZMean',
+                                     'Left Hippocampus NZcount',
+                                     'Right Hippocampus NZMean',
+                                     'Right Hippocampus NZcount'))
+struc_hippo$type = 'struc'
+
+all_hippo = rbind(cest_hippo, struc_hippo)
+all_hippo[is.na(all_hippo)] = 0
+
+```
+
+```{r}
+
+get_mean_sd <- function(all_hippo) {
+  
+  hippo_meansd = all_hippo %>%
+    select(!c(Subject)) %>%
+    group_by(group, type) %>%
+    summarise(across(everything(), list(mean = mean, sd = sd)))
+  
+  hippo_meansd = reshape2::melt(hippo_meansd, 
+                                id=c('group', 'type'),
+                                variable.name=c('measure_type'),
+                                value.name = 'measures')
+  
+  hippo_meansd$rl = sapply(hippo_meansd$measure_type,
+                           FUN = function(x) {
+                             unlist(str_split(x, ' '))[1]
+                           })
+  hippo_meansd$measure_type = sapply(hippo_meansd$measure_type,
+                                     FUN = function(x) {
+                                       unlist(str_split(x, ' '))[3]
+                                     })
+  
+  hippo_meansd = spread(hippo_meansd, measure_type, measures)
+}
+
+hippo_meansd = get_mean_sd(all_hippo)
+
+hippo_meansd
+
+```
+
+```{r}
+
+plot_meansd <- function(hippo_meansd, img_type, y_val, y_sd, title, ytitle) {
+  
+  hippo_meansd = hippo_meansd %>%
+    mutate(group_rl = paste(group, rl, sep='_')) 
+  
+  hippo_meansd %>%
+    filter(type == img_type) %>%
+    ggplot(aes(group_rl, get(y_val))) +
+    geom_bar(aes(fill = group), position='dodge', stat='identity') +
+    scale_fill_manual(values = c('salmon', 'light green', 'orange')) +
+    geom_errorbar(aes(ymin = get(y_val) - get(y_sd), 
+                      ymax = get(y_val) + get(y_sd)), 
+                  width = 0.2, position = position_dodge(0.9)) +
+    theme_minimal() +
+    theme(plot.title = element_text(size=20, hjust = 0.5),
+          axis.text.x = element_text(size = 15),
+          axis.text.y = element_text(size = 15),
+          axis.title.y = element_text(size = 15),
+          axis.title.x = element_blank(),
+          legend.title = element_text(size = 15),
+          legend.text = element_text(size = 15)) +
+    ylab(ytitle) +
+    labs(fill = 'Group') +
+    scale_x_discrete(labels = rep(c('Left', 'Right'), 3)) +
+    ggtitle(title)
+
+}
+
+```
+
+```{r}
+pdf(file=file.path(project, 'plots', 'mean_hippocampus_glucest.pdf'))
+plt = plot_meansd(hippo_meansd, 'cest', 'NZMean_mean', 'NZMean_sd', 
+                  'Mean Hippocampus GluCEST', 'GluCEST')
+plt
+dev.off()
+plt
+```
+
+
+```{r}
+pdf(file=file.path(project, 'plots', 
+                   'num_hippocampus_voxels_structural.pdf'))
+
+plt = plot_meansd(hippo_meansd, 'struc', 'NZcount_mean', 'NZcount_sd', 
+                  'Mean number of hippocampal voxels in 3d image', 
+                  'Number of Voxels' )
+plt
+dev.off()
+
+plt
+```
+
+```{r}
+pdf(file=file.path(project, 'plots', 'num_hippocampus_voxels_glucest.pdf'))
+
+plt = plot_meansd(hippo_meansd, 'cest', 'NZcount_mean', 'NZcount_sd', 
+                  'Mean number of Hippocampus voxels in GluCEST', 
+                  'Number of Voxels' )
+plt
+dev.off()
+
+plt
+```
+
+```{r}
+hippo_meansd_wo_outliers = all_hippo[!c(all_hippo$Subject %in% omit_bblid), ]
+hippo_meansd_wo_outliers = get_mean_sd(hippo_meansd_wo_outliers)
+hippo_meansd_wo_outliers
+```
+
+```{r}
+pdf(file=file.path(project, 'plots', 
+                   'mean_hippocampus_glucest_wo_outliers.pdf'))
+
+plt = plot_meansd(hippo_meansd_wo_outliers, 'cest', 'NZMean_mean', 'NZMean_sd', 
+                  'Mean Hippocampus GluCEST without outliers', 'GluCEST')
+plt
+dev.off()
+
+plt
+```
+
+```{r}
+pdf(file=file.path(project, 'plots', 
+                   'num_hippocampus_voxels_structural_wo_outliers.pdf'))
+
+plt = plot_meansd(hippo_meansd_wo_outliers,
+                  'struc', 'NZcount_mean', 'NZcount_sd', 
+                  'Mean number of hippocampal voxels in structural image without outliers', 
+                  'Number of Voxels' )
+plt
+dev.off()
+
+plt
+```
+
+```{r}
+pdf(file=file.path(project, 'plots', 
+                   'num_hippocampus_voxels_glucest_wo_outliers.pdf'))
+
+plt = plot_meansd(hippo_meansd_wo_outliers, 'cest', 'NZcount_mean', 'NZcount_sd', 
+                  'Mean number of Hippocampus voxels in GluCEST without outliers', 
+                  'Number of Voxels' )
+plt
+dev.off()
+
+plt
+```
+
+```{r}
+all_roi = bind_rows(cest_roi, struc_roi)
+all_roi
+```
+
+```{r}
+all_roi_count = all_roi[, grepl('NZcount|group', colnames(all_roi))]
+all_roi_count_percent = all_roi_count
+
+roi_counts = all_roi_count[, colnames(all_roi_count) != 'group']
+all_roi_count_percent[, colnames(all_roi_count_percent) != 'group'] = roi_counts / roi_counts
+all_roi_count_percent[is.na(all_roi_count_percent)] = 0
+all_roi_count[is.na(all_roi_count)] = 0
+
+all_roi_count_percent = all_roi_count_percent %>%
+  group_by(group) %>%
+  summarise(across(everything(), list(mean = mean, sd = sd)))
+all_roi_count_percent
+```
+
+```{r}
+all_roi_count_minmax = all_roi_count %>%
+  group_by(group) %>%
+  summarise(across(everything(), list(min = min, max = max)))
+all_roi_count_minmax
+```
+
+```{r}
+all_roi_count_stats = merge(all_roi_count_minmax, all_roi_count_percent)
+order_colname = colnames(all_roi_count_stats)
+order_colname = order_colname[order(order_colname)]
+
+order_colname = c('group', 
+                  order_colname[order_colname != 'group'])
+
+all_roi_count_stats = all_roi_count_stats[, order_colname]
+all_roi_count_stats
+```
+
